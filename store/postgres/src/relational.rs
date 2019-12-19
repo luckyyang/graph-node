@@ -17,8 +17,8 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use crate::relational_queries::{
-    ClampRangeQuery, ConflictingEntityQuery, EntityData, FilterQuery, FindManyQuery, FindQuery,
-    InsertQuery, RevertClampQuery, RevertRemoveQuery,
+    ClampRangeQuery, ConflictingEntityQuery, DeleteQuery, EntityData, FilterQuery, FindManyQuery,
+    FindQuery, InsertQuery, RevertClampQuery, RevertRemoveQuery, UpdateQuery,
 };
 use graph::prelude::{
     format_err, BlockNumber, Entity, EntityChange, EntityChangeOperation, EntityCollection,
@@ -26,7 +26,7 @@ use graph::prelude::{
     SubgraphDeploymentId, ValueType,
 };
 
-use crate::block_range::BLOCK_RANGE_COLUMN;
+use crate::block_range::{BLOCK_RANGE_COLUMN, BLOCK_UNVERSIONED};
 use crate::entities::STRING_PREFIX_SIZE;
 
 /// A string we use as a SQL name for a table or column. The important thing
@@ -377,6 +377,18 @@ impl Layout {
         Ok(())
     }
 
+    pub fn insert_unversioned(
+        &self,
+        conn: &PgConnection,
+        key: &EntityKey,
+        entity: Entity,
+    ) -> Result<(), StoreError> {
+        let table = self.table_for_entity(&key.entity_type)?;
+        let query = InsertQuery::new(table, key, entity, BLOCK_UNVERSIONED)?;
+        query.execute(conn)?;
+        Ok(())
+    }
+
     pub fn conflicting_entity(
         &self,
         conn: &PgConnection,
@@ -430,6 +442,18 @@ impl Layout {
         Ok(())
     }
 
+    pub fn update_unversioned(
+        &self,
+        conn: &PgConnection,
+        key: &EntityKey,
+        entity: &Entity,
+    ) -> Result<(), StoreError> {
+        let table = self.table_for_entity(&key.entity_type)?;
+        let query = UpdateQuery::new(table, key, entity)?;
+        query.execute(conn)?;
+        Ok(())
+    }
+
     pub fn delete(
         &self,
         conn: &PgConnection,
@@ -438,6 +462,15 @@ impl Layout {
     ) -> Result<usize, StoreError> {
         let table = self.table_for_entity(&key.entity_type)?;
         Ok(ClampRangeQuery::new(table, key, block).execute(conn)?)
+    }
+
+    pub fn delete_unversioned(
+        &self,
+        conn: &PgConnection,
+        key: &EntityKey,
+    ) -> Result<usize, StoreError> {
+        let table = self.table_for_entity(&key.entity_type)?;
+        Ok(DeleteQuery::new(table, key).execute(conn)?)
     }
 
     pub fn revert_block(

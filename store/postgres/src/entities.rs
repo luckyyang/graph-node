@@ -497,9 +497,12 @@ impl Connection {
             Storage::Json(json) => json
                 .insert(&self.conn, &key, entity, history_event)
                 .map(|_| ()),
-            Storage::Relational(layout) => {
-                layout.insert(&self.conn, key, entity, block_number(&history_event))
-            }
+            Storage::Relational(layout) => match history_event {
+                Some(history_event) => {
+                    layout.insert(&self.conn, key, entity, block_number(&history_event))
+                }
+                None => layout.insert_unversioned(&self.conn, key, entity),
+            },
         }
     }
 
@@ -513,9 +516,12 @@ impl Connection {
             Storage::Json(json) => json
                 .update(&self.conn, key, entity, history_event)
                 .map(|_| ()),
-            Storage::Relational(layout) => {
-                layout.update(&self.conn, key, entity, block_number(&history_event))
-            }
+            Storage::Relational(layout) => match history_event {
+                Some(history_event) => {
+                    layout.update(&self.conn, key, entity, block_number(&history_event))
+                }
+                None => layout.update_unversioned(&self.conn, key, &entity),
+            },
         }
     }
 
@@ -554,9 +560,10 @@ impl Connection {
     ) -> Result<usize, StoreError> {
         match self.storage_for(key) {
             Storage::Json(json) => json.delete(&self.conn, key, history_event),
-            Storage::Relational(layout) => {
-                layout.delete(&self.conn, key, block_number(&history_event))
-            }
+            Storage::Relational(layout) => match history_event {
+                Some(history_event) => layout.delete(&self.conn, key, block_number(&history_event)),
+                None => layout.delete_unversioned(&self.conn, key),
+            },
         }
     }
 
