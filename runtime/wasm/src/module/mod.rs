@@ -92,13 +92,12 @@ fn format_wasmi_error(e: Error) -> String {
 }
 
 /// A WASM module based on wasmi that powers a subgraph runtime.
-pub(crate) struct WasmiModule<U> {
+pub(crate) struct WasmiModule {
     pub module: ModuleRef,
     memory: MemoryRef,
 
     pub ctx: MappingContext,
     pub(crate) valid_module: Arc<ValidModule>,
-    pub(crate) task_sink: U,
     pub(crate) host_metrics: Arc<HostMetrics>,
 
     // Time when the current handler began processing.
@@ -118,19 +117,11 @@ pub(crate) struct WasmiModule<U> {
     timeout_checkpoint_count: u64,
 }
 
-impl<U> WasmiModule<U>
-where
-    U: Sink<SinkItem = Box<dyn Future<Item = (), Error = ()> + Send>>
-        + Clone
-        + Send
-        + Sync
-        + 'static,
-{
+impl WasmiModule {
     /// Creates a new wasmi module
     pub fn from_valid_module_with_ctx(
         valid_module: Arc<ValidModule>,
         ctx: MappingContext,
-        task_sink: U,
         host_metrics: Arc<HostMetrics>,
     ) -> Result<Self, FailureError> {
         // Build import resolver
@@ -158,7 +149,6 @@ where
             memory,
             ctx,
             valid_module: valid_module.clone(),
-            task_sink,
             host_metrics,
             start_time: Instant::now(),
             running_start: true,
@@ -323,14 +313,7 @@ where
     }
 }
 
-impl<U> AscHeap for WasmiModule<U>
-where
-    U: Sink<SinkItem = Box<dyn Future<Item = (), Error = ()> + Send>>
-        + Clone
-        + Send
-        + Sync
-        + 'static,
-{
+impl AscHeap for WasmiModule {
     fn raw_new(&mut self, bytes: &[u8]) -> Result<u32, Error> {
         // We request large chunks from the AssemblyScript allocator to use as arenas that we
         // manage directly.
@@ -370,14 +353,7 @@ where
 impl<E> HostError for HostExportError<E> where E: fmt::Debug + fmt::Display + Send + Sync + 'static {}
 
 // Implementation of externals.
-impl<U> WasmiModule<U>
-where
-    U: Sink<SinkItem = Box<dyn Future<Item = (), Error = ()> + Send>>
-        + Clone
-        + Send
-        + Sync
-        + 'static,
-{
+impl WasmiModule {
     fn gas(&mut self) -> Result<Option<RuntimeValue>, Trap> {
         // This function is called so often that the overhead of calling `Instant::now()` every
         // time would be significant, so we spread out the checks.
@@ -490,12 +466,10 @@ where
         call_ptr: AscPtr<AscUnresolvedContractCall>,
     ) -> Result<Option<RuntimeValue>, Trap> {
         let call = self.asc_get(call_ptr);
-        let result = self.ctx.host_exports.ethereum_call(
-            &mut self.task_sink,
-            &mut self.ctx.logger,
-            &self.ctx.block,
-            call,
-        )?;
+        let result =
+            self.ctx
+                .host_exports
+                .ethereum_call(&mut self.ctx.logger, &self.ctx.block, call)?;
         Ok(Some(match result {
             Some(tokens) => RuntimeValue::from(self.asc_new(tokens.as_slice())),
             None => RuntimeValue::from(0),
@@ -581,10 +555,7 @@ where
     /// function ipfs.cat(link: String): Bytes
     fn ipfs_cat(&mut self, link_ptr: AscPtr<AscString>) -> Result<Option<RuntimeValue>, Trap> {
         let link = self.asc_get(link_ptr);
-        let ipfs_res = self
-            .ctx
-            .host_exports
-            .ipfs_cat(&self.ctx.logger, &mut self.task_sink, link);
+        let ipfs_res = self.ctx.host_exports.ipfs_cat(&self.ctx.logger, link);
         match ipfs_res {
             Ok(bytes) => {
                 let bytes_obj: AscPtr<Uint8Array> = self.asc_new(&*bytes);
@@ -952,14 +923,7 @@ where
     }
 }
 
-impl<U> Externals for WasmiModule<U>
-where
-    U: Sink<SinkItem = Box<dyn Future<Item = (), Error = ()> + Send>>
-        + Clone
-        + Send
-        + Sync
-        + 'static,
-{
+impl Externals for WasmiModule {
     fn invoke_index(
         &mut self,
         index: usize,
