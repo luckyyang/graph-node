@@ -23,7 +23,7 @@ use crate::relational_queries::{
 use graph::prelude::{
     format_err, BlockNumber, Entity, EntityChange, EntityChangeOperation, EntityCollection,
     EntityFilter, EntityKey, EntityOrder, EntityRange, QueryExecutionError, StoreError, StoreEvent,
-    SubgraphDeploymentId, ValueType,
+    SubgraphDeploymentId, Value, ValueType,
 };
 
 use crate::block_range::{BLOCK_RANGE_COLUMN, BLOCK_UNVERSIONED};
@@ -442,7 +442,7 @@ impl Layout {
         Ok(())
     }
 
-    pub fn update_unversioned(
+    pub fn update_metadata(
         &self,
         conn: &PgConnection,
         key: &EntityKey,
@@ -450,6 +450,24 @@ impl Layout {
     ) -> Result<usize, StoreError> {
         let table = self.table_for_entity(&key.entity_type)?;
         let query = UpdateQuery::new(table, key, entity)?;
+        Ok(query.execute(conn)?)
+    }
+
+    pub fn overwrite_unversioned(
+        &self,
+        conn: &PgConnection,
+        key: &EntityKey,
+        mut entity: Entity,
+    ) -> Result<usize, StoreError> {
+        let table = self.table_for_entity(&key.entity_type)?;
+        // Set any attributes not mentioned in the entity to
+        // their default (NULL)
+        for column in table.columns.iter() {
+            if !entity.contains_key(&column.field) {
+                entity.insert(column.field.clone(), Value::Null);
+            }
+        }
+        let query = UpdateQuery::new(table, key, &entity)?;
         Ok(query.execute(conn)?)
     }
 

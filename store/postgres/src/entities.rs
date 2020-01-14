@@ -506,6 +506,9 @@ impl Connection {
         }
     }
 
+    /// Overwrite an entity with a new version. The `history_event` indicates
+    /// at which block the new version becomes valid if it is given. If it is
+    /// `None`, the entity is treated as unversioned
     pub(crate) fn update(
         &self,
         key: &EntityKey,
@@ -521,7 +524,7 @@ impl Connection {
                     layout.update(&self.conn, key, entity, block_number(&history_event))
                 }
                 None => layout
-                    .update_unversioned(&self.conn, key, &entity)
+                    .overwrite_unversioned(&self.conn, key, entity)
                     .map(|_| ()),
             },
         }
@@ -536,7 +539,7 @@ impl Connection {
     ) -> Result<usize, StoreError> {
         match &*self.metadata {
             Storage::Json(json) => json.update_metadata(&self.conn, key, entity),
-            Storage::Relational(layout) => layout.update_unversioned(&self.conn, key, entity),
+            Storage::Relational(layout) => layout.update_metadata(&self.conn, key, entity),
         }
     }
 
