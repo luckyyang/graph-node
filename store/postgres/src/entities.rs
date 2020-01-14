@@ -51,7 +51,6 @@ use graph::prelude::{
 
 use crate::block_range::block_number;
 use crate::history_event::HistoryEvent;
-use crate::jsonb::PgJsonbExpressionMethods as _;
 use crate::jsonb_queries::FilterQuery;
 use crate::notification_listener::JsonNotification;
 use crate::relational::{IdType, Layout};
@@ -538,7 +537,7 @@ impl Connection {
         entity: &Entity,
     ) -> Result<usize, StoreError> {
         match &*self.metadata {
-            Storage::Json(json) => json.update_metadata(&self.conn, key, entity),
+            Storage::Json(_) => unreachable!("JSONB storage of subgraph metadata is not supported"),
             Storage::Relational(layout) => layout.update_metadata(&self.conn, key, entity),
         }
     }
@@ -549,7 +548,7 @@ impl Connection {
         id: &String,
     ) -> Result<Option<Entity>, StoreError> {
         match &*self.metadata {
-            Storage::Json(json) => json.find(&self.conn, entity, id),
+            Storage::Json(_) => unreachable!("JSONB storage of subgraph metadata is not supported"),
             Storage::Relational(layout) => layout.find(&self.conn, entity, id, BLOCK_NUMBER_MAX),
         }
     }
@@ -582,9 +581,6 @@ impl Connection {
         &self,
         block_ptr: &EthereumBlockPointer,
     ) -> Result<(StoreEvent, i32), StoreError> {
-        // The subgraph in which we are reverting
-        let subgraph = self.storage.subgraph();
-
         // Revert the block in the subgraph itself
         let (event, count) = match &*self.storage {
             Storage::Json(json) => json.revert_block(&self.conn, block_ptr.hash_hex())?,
@@ -599,9 +595,7 @@ impl Connection {
         // rest of the code that we only record history for those meta data
         // changes that might need to be reverted
         let (meta_event, _) = match &*self.metadata {
-            Storage::Json(json) => {
-                json.revert_block_meta(&self.conn, subgraph, block_ptr.hash_hex())
-            }
+            Storage::Json(_) => unreachable!("JSONB storage of subgraph metadata is not supported"),
             Storage::Relational(relational) => relational.revert_block(
                 &self.conn,
                 block_ptr
@@ -633,21 +627,10 @@ impl Connection {
             }
             Storage::Relational(layout) => {
                 // For relational storage, we do not need an entry in event_meta_data
-                // _unless_ any change we will make touches the metadata subgraph
-                // since that uses JSON storage
-                if mods.iter().any(|m| m.is_meta()) {
-                    HistoryEvent::allocate(
-                        &self.conn,
-                        layout.subgraph.clone(),
-                        block_ptr,
-                        has_removes,
-                    )
-                } else {
-                    Ok(HistoryEvent::create_without_event_metadata(
-                        layout.subgraph.clone(),
-                        block_ptr,
-                    ))
-                }
+                Ok(HistoryEvent::create_without_event_metadata(
+                    layout.subgraph.clone(),
+                    block_ptr,
+                ))
             }
         }
     }
@@ -1038,32 +1021,6 @@ impl JsonStorage {
         })
     }
 
-    fn update_metadata(
-        &self,
-        conn: &PgConnection,
-        key: &EntityKey,
-        entity: &Entity,
-    ) -> Result<usize, StoreError> {
-        const NONE: &str = "none";
-        assert_eq!(
-            *SUBGRAPHS_ID, key.subgraph_id,
-            "update_metadata can only be called on the metadata subgraph"
-        );
-        let data = entity_to_json(key, &entity)?;
-
-        use self::subgraphs::entities;
-
-        let query = diesel::update(entities::table)
-            .filter(entities::entity.eq(&key.entity_type))
-            .filter(entities::id.eq(&key.entity_id))
-            .set((
-                entities::data.eq(entities::data.merge(&data)),
-                entities::event_source.eq(NONE),
-            ));
-
-        Ok(query.execute(conn)?)
-    }
-
     fn delete(
         &self,
         conn: &PgConnection,
@@ -1154,29 +1111,6 @@ impl JsonStorage {
         .execute(conn)?;
 
         Ok(())
-    }
-
-    fn revert_block_meta(
-        &self,
-        conn: &PgConnection,
-        subgraph_id: &SubgraphDeploymentId,
-        block_ptr: String,
-    ) -> Result<(StoreEvent, i32), StoreError> {
-        use self::subgraphs::entity_history::dsl as h;
-        use self::subgraphs::event_meta_data as m;
-        // Collect entity history events in the subgraph of subgraphs that
-        // match the subgraph for which we're reverting the block
-        let entries: Vec<RawHistory> = h::entity_history
-            .inner_join(m::table)
-            .select((h::id, h::entity, h::entity_id, h::data_before, h::op_id))
-            .filter(h::subgraph.eq(&**subgraph_id))
-            .filter(m::source.eq(&block_ptr))
-            .order(h::event_id.desc())
-            .load(conn)?;
-
-        // Apply revert operations
-        self.revert_entity_history_records(conn, entries)
-            .map(|(changes, count)| (StoreEvent::new(changes), count))
     }
 
     /// Revert the block with the given `block_ptr` which must be the hash
