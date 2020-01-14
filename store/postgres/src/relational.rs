@@ -368,7 +368,7 @@ impl Layout {
         &self,
         conn: &PgConnection,
         key: &EntityKey,
-        entity: &Entity,
+        entity: Entity,
         block: BlockNumber,
     ) -> Result<(), StoreError> {
         let table = self.table_for_entity(&key.entity_type)?;
@@ -420,7 +420,7 @@ impl Layout {
         &self,
         conn: &PgConnection,
         key: &EntityKey,
-        entity: &Entity,
+        entity: Entity,
         block: BlockNumber,
     ) -> Result<(), StoreError> {
         let table = self.table_for_entity(&key.entity_type)?;
