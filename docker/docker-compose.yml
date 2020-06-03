@@ -13,26 +13,29 @@ services:
       - postgres
     environment:
       postgres_host: postgres:5432
-      postgres_user: graph-node
-      postgres_pass: let-me-in
+      postgres_user: postgres
+      postgres_pass: YOUR_PASSWORD
       postgres_db: graph-node
       ipfs: 'ipfs:5001'
+      # ethereum: 'mainnet:https://mainrpc.elaeth.io'
+      # ethereum: 'testnet:https://rpc.elaeth.io'
       ethereum: 'mainnet:http://host.docker.internal:8545'
       RUST_LOG: info
   ipfs:
-    image: ipfs/go-ipfs
+    image: ipfs/go-ipfs:v0.4.23
     ports:
       - '5001:5001'
     volumes:
       - ./data/ipfs:/data/ipfs
   postgres:
     image: postgres
+    container_name: postgres-graph
     ports:
       - '5432:5432'
     command: ["postgres", "-cshared_preload_libraries=pg_stat_statements"]
     environment:
-      POSTGRES_USER: graph-node
-      POSTGRES_PASSWORD: let-me-in
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: YOUR_PASSWORD
       POSTGRES_DB: graph-node
     volumes:
       - ./data/postgres:/var/lib/postgresql/data
